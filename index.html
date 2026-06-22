@@ -212,6 +212,28 @@
   .modal-card .close:hover{color:var(--cream);border-color:rgba(231,196,133,.5);}
 
   /* ============================================================
+     背景音乐按钮
+     ============================================================ */
+  .music-btn{position:fixed;right:22px;bottom:22px;z-index:40;width:50px;height:50px;border-radius:50%;
+    cursor:pointer;border:1px solid rgba(231,196,133,.4);color:var(--gold);
+    background:linear-gradient(160deg,rgba(244,236,219,.10),rgba(244,236,219,.03));
+    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+    box-shadow:0 10px 30px rgba(0,0,0,.4);font-size:20px;line-height:1;
+    display:flex;align-items:center;justify-content:center;
+    transition:transform .25s, box-shadow .3s, border-color .3s;}
+  .music-btn:hover{transform:translateY(-2px) scale(1.05);border-color:var(--gold);
+    box-shadow:0 16px 40px rgba(231,196,133,.25);}
+  .music-btn .ico{display:block;transition:transform .3s;}
+  /* 播放中：旋转的金色光环 + 音符轻跳 */
+  .music-btn.playing{border-color:var(--gold);box-shadow:0 0 0 1px rgba(231,196,133,.3),0 0 26px rgba(231,196,133,.35);}
+  .music-btn.playing::before{content:"";position:absolute;inset:-4px;border-radius:50%;
+    border:1px solid transparent;border-top-color:rgba(231,196,133,.7);animation:spin 3.2s linear infinite;}
+  .music-btn.playing .ico{animation:notebob 1.4s ease-in-out infinite;}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes notebob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+  @media (max-width:480px){ .music-btn{right:16px;bottom:16px;width:46px;height:46px;font-size:18px;} }
+
+  /* ============================================================
      响应式
      ============================================================ */
   @media (max-width:820px){
@@ -343,6 +365,12 @@
     </div>
   </div>
 
+  <!-- 背景音乐 -->
+  <audio id="bgm" loop preload="auto"></audio>
+  <button id="musicBtn" class="music-btn" aria-label="背景音乐开关" title="背景音乐">
+    <span class="ico">♪</span>
+  </button>
+
 <script>
 /* ============================================================
    ★★★ 配置区：所有可替换内容都在这里，改这里就行 ★★★
@@ -404,6 +432,13 @@ const CONFIG = {
   // —— 页脚 ——
   footer: "献给我最敬爱的父亲",
   footerEn: "Happy Father’s Day",
+
+  // —— 背景音乐 ——
+  // 把你截好的音频(如《父亲写的散文诗》高潮片段)命名为 music.mp3 放进 public 文件夹
+  music: "public/music.mp3",
+  musicName: "父亲写的散文诗 · 高潮",
+  musicVolume: 0.7,          // 音量 0~1
+  musicAutoStart: true,      // 首次互动时是否自动淡入播放
 };
 /* ============================================================
    配置区结束（下面一般不用改）
@@ -522,6 +557,60 @@ const CONFIG = {
   $("modalClose").addEventListener("click", close);
   $("modalBg").addEventListener("click", close);
   window.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+
+  /* ---------- 背景音乐 ---------- */
+  const bgm = $("bgm");
+  const musicBtn = $("musicBtn");
+  const TARGET_VOL = Math.max(0, Math.min(1, CONFIG.musicVolume));
+  let musicOn = false, fadeRaf = null;
+
+  bgm.src = CONFIG.music;
+  bgm.volume = 0;
+  bgm.title = CONFIG.musicName;
+  // 没有音频文件时，隐藏按钮（不影响其余内容）
+  bgm.addEventListener("error", () => { musicBtn.style.display = "none"; });
+
+  function fade(to, done){
+    if (fadeRaf) cancelAnimationFrame(fadeRaf);
+    const step = () => {
+      const d = to - bgm.volume;
+      if (Math.abs(d) < 0.02){ bgm.volume = to; if (done) done(); return; }
+      bgm.volume = Math.max(0, Math.min(1, bgm.volume + d * 0.06));
+      fadeRaf = requestAnimationFrame(step);
+    };
+    step();
+  }
+  function playMusic(){
+    bgm.play().then(() => {
+      musicOn = true; musicBtn.classList.add("playing"); fade(TARGET_VOL);
+    }).catch(() => { /* 浏览器拦截自动播放：等下一次手动点 ♪ 即可 */ });
+  }
+  function pauseMusic(){
+    musicOn = false; musicBtn.classList.remove("playing");
+    fade(0, () => bgm.pause());
+  }
+  musicBtn.addEventListener("click", (e) => {
+    e.stopPropagation();           // 不触发"首次互动自动播放"
+    musicOn ? pauseMusic() : playMusic();
+  });
+
+  // 首次触碰/点击/滚动时，温柔地淡入音乐（浏览器要求有用户互动才能出声）
+  if (CONFIG.musicAutoStart){
+    const EVTS = ["pointerdown","touchstart","click","keydown","scroll"];
+    const startOnce = () => {
+      if (!musicOn) playMusic();
+      EVTS.forEach(ev => window.removeEventListener(ev, startOnce));
+    };
+    EVTS.forEach(ev => window.addEventListener(ev, startOnce, { passive: true }));
+
+    // 微信内置浏览器：等 JSBridge 就绪后尝试自动播放（无需用户互动）
+    const wxTry = () => { if (!musicOn) playMusic(); };
+    if (typeof WeixinJSBridge !== "undefined"){
+      WeixinJSBridge.invoke("getNetworkType", {}, wxTry);
+    } else {
+      document.addEventListener("WeixinJSBridgeReady", wxTry, false);
+    }
+  }
 })();
 </script>
 </body>
